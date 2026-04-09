@@ -1,0 +1,14 @@
+# Environment / secrets
+.env
+API KEY 1.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# App data
+history.json

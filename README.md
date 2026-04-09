@@ -1,13 +1,6 @@
-# Screenshot to LaTeX Agent
+# MathSnip
 
-A Windows desktop app that converts equation screenshots to LaTeX and copies the result to your clipboard — ready to paste into Word or any equation editor.
-
-## Workflow
-
-1. Capture an equation screenshot (snipping overlay or existing clipboard image).
-2. The image is sent to an OpenAI vision model.
-3. LaTeX is returned and copied to the clipboard automatically.
-4. Paste into Word's equation input or any LaTeX editor.
+A Windows desktop app that captures equation screenshots and converts them to LaTeX using an OpenAI vision model. The result is automatically copied to the clipboard, ready to paste into Word, Overleaf, or any LaTeX editor.
 
 ## Setup
 
@@ -18,37 +11,11 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and set your API key (only required for the OpenAI backend):
+Edit `.env` and set your API key:
 
 ```env
 OPENAI_API_KEY=your_api_key_here
 ```
-
-### Ollama backend — local, no API key, near-GPT quality
-
-1. Install [Ollama](https://ollama.com/download) and start it:
-   ```powershell
-   ollama serve
-   ```
-2. Pull Qwen2.5-VL (recommended):
-   ```powershell
-   ollama pull qwen2.5-vl:7b
-   ```
-3. Install the Python client:
-   ```powershell
-   pip install ollama
-   ```
-4. Select **Ollama** in the Backend selector and choose the model.
-
-Other supported models: `qwen2.5-vl:3b`, `qwen2.5-vl:72b`, `llama3.2-vision:11b`, `llava:13b`.
-
-### pix2tex backend — lightweight, single equations only
-
-```powershell
-pip install pix2tex
-```
-
-Select **pix2tex (local)**. Best for clean, isolated single-line equations. Struggles with complex multi-line expressions.
 
 ## Run
 
@@ -85,5 +52,4 @@ The **History** panel shows the last 25 results. Use the search box to filter by
 - Results are returned without surrounding `$...$` for easier pasting into Word.
 - Complex layouts (matrices, aligned systems, piecewise) are prompted to use matching LaTeX environments.
 - Drag-and-drop requires `tkinterdnd2` (included in `requirements.txt`). The app works without it if the package is unavailable.
-- The pix2tex backend runs entirely offline after the first run. It is best suited for single-line equations; complex multi-line layouts may be less accurate than the OpenAI backend.
 - History is stored locally in `history.json` (excluded from version control).

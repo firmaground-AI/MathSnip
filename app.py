@@ -27,6 +27,12 @@ try:
 except ImportError:
     _PIX2TEX_AVAILABLE = False
 
+try:
+    import ollama as _ollama
+    _OLLAMA_AVAILABLE = True
+except ImportError:
+    _OLLAMA_AVAILABLE = False
+
 DEFAULT_SYSTEM_PROMPT = """You extract mathematical expressions from screenshots.
 Return only valid LaTeX for the equation content.
 Do not include markdown fences.
@@ -42,8 +48,9 @@ DEFAULT_CAPTURE_HOTKEY = "ctrl+alt+s"
 DEFAULT_CLIPBOARD_HOTKEY = "ctrl+alt+v"
 HISTORY_FILE = Path(__file__).with_name("history.json")
 MODEL_PRESETS = ["gpt-4.1", "gpt-4o", "gpt-4-turbo", "gpt-4o-mini"]
+OLLAMA_MODEL_PRESETS = ["qwen2.5-vl:7b", "qwen2.5-vl:3b", "qwen2.5-vl:72b", "llama3.2-vision:11b", "llava:13b"]
 API_TIMEOUT = 30
-BACKENDS = ["OpenAI", "pix2tex (local)"]
+BACKENDS = ["OpenAI", "Ollama", "pix2tex (local)"]
 
 _BaseClass = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
@@ -96,15 +103,31 @@ class LatexAgentApp(_BaseClass):
             )
 
     def _on_backend_change(self) -> None:
-        using_openai = self.backend_var.get() == "OpenAI"
-        self._model_combo.configure(state="readonly" if using_openai else "disabled")
-        if not using_openai and not _PIX2TEX_AVAILABLE:
-            messagebox.showwarning(
-                "pix2tex not installed",
-                "pix2tex is not installed.\n\nRun:\n  pip install pix2tex\n\nthen restart the app.",
-            )
-            self.backend_var.set("OpenAI")
-            self._model_combo.configure(state="readonly")
+        backend = self.backend_var.get()
+        if backend == "OpenAI":
+            self._model_combo.configure(state="readonly", values=MODEL_PRESETS)
+            self.model_var.set(self.default_model)
+        elif backend == "Ollama":
+            if not _OLLAMA_AVAILABLE:
+                messagebox.showwarning(
+                    "ollama not installed",
+                    "The ollama package is not installed.\n\nRun:\n  pip install ollama\n\nthen restart the app.",
+                )
+                self.backend_var.set("OpenAI")
+                self._model_combo.configure(state="readonly", values=MODEL_PRESETS)
+                return
+            self._model_combo.configure(state="normal", values=OLLAMA_MODEL_PRESETS)
+            self.model_var.set(OLLAMA_MODEL_PRESETS[0])
+        elif backend == "pix2tex (local)":
+            if not _PIX2TEX_AVAILABLE:
+                messagebox.showwarning(
+                    "pix2tex not installed",
+                    "pix2tex is not installed.\n\nRun:\n  pip install pix2tex\n\nthen restart the app.",
+                )
+                self.backend_var.set("OpenAI")
+                self._model_combo.configure(state="readonly", values=MODEL_PRESETS)
+                return
+            self._model_combo.configure(state="disabled")
 
     def _build_ui(self) -> None:
         root = ttk.Frame(self, padding=16)
@@ -322,8 +345,11 @@ class LatexAgentApp(_BaseClass):
 
     def _generate_latex_worker(self, source: str, image: Image.Image) -> None:
         try:
-            if self.backend_var.get() == "pix2tex (local)":
+            backend = self.backend_var.get()
+            if backend == "pix2tex (local)":
                 latex = self._run_pix2tex(image)
+            elif backend == "Ollama":
+                latex = self._run_ollama(image)
             else:
                 latex = self._run_openai(image)
             if self._cancel_requested:
@@ -369,6 +395,41 @@ class LatexAgentApp(_BaseClass):
             timeout=API_TIMEOUT,
         )
         return response.output_text.strip()
+
+    def _run_ollama(self, image: Image.Image) -> str:
+        if not _OLLAMA_AVAILABLE:
+            raise RuntimeError("ollama package not installed. Run: pip install ollama")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        img_b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+        model = self.model_var.get().strip() or OLLAMA_MODEL_PRESETS[0]
+        try:
+            response = _ollama.chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Extract the mathematical expression from this image "
+                            "and return only the LaTeX."
+                        ),
+                        "images": [img_b64],
+                    },
+                ],
+            )
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "connection" in msg or "refused" in msg or "connect" in msg:
+                raise RuntimeError(
+                    "Cannot connect to Ollama. Make sure it is running:\n  ollama serve"
+                ) from exc
+            if "not found" in msg or "no such" in msg:
+                raise RuntimeError(
+                    f"Model '{model}' is not pulled yet.\n\nRun:\n  ollama pull {model}"
+                ) from exc
+            raise
+        return response.message.content.strip()
 
     def _run_pix2tex(self, image: Image.Image) -> str:
         if not _PIX2TEX_AVAILABLE:

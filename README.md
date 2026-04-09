@@ -24,13 +24,31 @@ Edit `.env` and set your API key (only required for the OpenAI backend):
 OPENAI_API_KEY=your_api_key_here
 ```
 
-### Local inference with pix2tex (no API key needed)
+### Ollama backend — local, no API key, near-GPT quality
+
+1. Install [Ollama](https://ollama.com/download) and start it:
+   ```powershell
+   ollama serve
+   ```
+2. Pull Qwen2.5-VL (recommended):
+   ```powershell
+   ollama pull qwen2.5-vl:7b
+   ```
+3. Install the Python client:
+   ```powershell
+   pip install ollama
+   ```
+4. Select **Ollama** in the Backend selector and choose the model.
+
+Other supported models: `qwen2.5-vl:3b`, `qwen2.5-vl:72b`, `llama3.2-vision:11b`, `llava:13b`.
+
+### pix2tex backend — lightweight, single equations only
 
 ```powershell
 pip install pix2tex
 ```
 
-Select **pix2tex (local)** in the Backend selector. The model weights are downloaded automatically on first use. Works offline after that.
+Select **pix2tex (local)**. Best for clean, isolated single-line equations. Struggles with complex multi-line expressions.
 
 ## Run
 

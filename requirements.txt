@@ -4,4 +4,5 @@ python-dotenv>=1.0.0
 keyboard>=0.13.5
 tkinterdnd2>=0.3.0
 # Optional: local inference without an API key
-# pip install pix2tex
+# pip install ollama        # Ollama backend (Qwen2.5-VL, LLaVA, etc.)
+# pip install pix2tex       # pix2tex backend (lightweight, single equations only)

@@ -12,7 +12,8 @@ from tkinter import filedialog, messagebox, ttk
 import keyboard
 from dotenv import load_dotenv
 from openai import OpenAI
-from PIL import Image, ImageGrab, ImageTk
+import numpy as np
+from PIL import Image, ImageGrab, ImageOps, ImageTk
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -377,14 +378,45 @@ class LatexAgentApp(_BaseClass):
                 "Loading pix2tex model (first run downloads weights, please wait)..."
             ))
             self._pix2tex_model = _Pix2TexOCR()
-        return self._pix2tex_model(image)
+        return self._pix2tex_model(self._preprocess_for_pix2tex(image))
+
+    @staticmethod
+    def _preprocess_for_pix2tex(image: Image.Image) -> Image.Image:
+        """Prepare a screenshot for pix2tex: grayscale, white background, binarize, pad."""
+        # Convert to grayscale
+        gray = image.convert("L")
+        arr = np.array(gray, dtype=np.uint8)
+
+        # Auto-invert: pix2tex expects dark ink on white background
+        if arr.mean() < 128:
+            arr = 255 - arr
+
+        # Binarize with Otsu-style threshold to remove noise and anti-aliasing
+        threshold = int(np.percentile(arr, 20))  # keep darkest 20% as ink
+        threshold = max(threshold, 100)           # floor to avoid all-white
+        arr = np.where(arr >= threshold, 255, 0).astype(np.uint8)
+
+        # Crop tight to the ink content
+        rows = np.any(arr < 255, axis=1)
+        cols = np.any(arr < 255, axis=0)
+        if rows.any() and cols.any():
+            r0, r1 = np.where(rows)[0][[0, -1]]
+            c0, c1 = np.where(cols)[0][[0, -1]]
+            arr = arr[r0:r1 + 1, c0:c1 + 1]
+
+        # Add white padding so the model sees context around the equation
+        pad = 16
+        arr = np.pad(arr, pad, constant_values=255)
+
+        return Image.fromarray(arr)
 
     def _handle_result(self, latex: str, source: str) -> None:
         self._end_busy()
         self._set_result_text(latex)
         self.copy_result()
-        self._add_history_entry(latex, source)
-        self.status_var.set("LaTeX generated and copied to the clipboard.")
+        backend = self.backend_var.get()
+        self._add_history_entry(latex, f"{source} [{backend}]")
+        self.status_var.set(f"LaTeX generated via {backend} and copied to the clipboard.")
 
     def _handle_cancel(self) -> None:
         self._end_busy()

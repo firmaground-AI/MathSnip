@@ -20,6 +20,12 @@ try:
 except ImportError:
     _DND_AVAILABLE = False
 
+try:
+    from pix2tex.cli import LatexOCR as _Pix2TexOCR
+    _PIX2TEX_AVAILABLE = True
+except ImportError:
+    _PIX2TEX_AVAILABLE = False
+
 DEFAULT_SYSTEM_PROMPT = """You extract mathematical expressions from screenshots.
 Return only valid LaTeX for the equation content.
 Do not include markdown fences.
@@ -36,6 +42,7 @@ DEFAULT_CLIPBOARD_HOTKEY = "ctrl+alt+v"
 HISTORY_FILE = Path(__file__).with_name("history.json")
 MODEL_PRESETS = ["gpt-4.1", "gpt-4o", "gpt-4-turbo", "gpt-4o-mini"]
 API_TIMEOUT = 30
+BACKENDS = ["OpenAI", "pix2tex (local)"]
 
 _BaseClass = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
@@ -51,6 +58,7 @@ class LatexAgentApp(_BaseClass):
 
         self._api_key: str | None = None
         self.client: OpenAI | None = None
+        self._pix2tex_model = None
         self.current_image: Image.Image | None = None
         self.preview_image: ImageTk.PhotoImage | None = None
         self.waiting_for_snip = False
@@ -62,6 +70,7 @@ class LatexAgentApp(_BaseClass):
         self.clipboard_hotkey = os.getenv("LATEX_AGENT_CLIPBOARD_HOTKEY", DEFAULT_CLIPBOARD_HOTKEY)
         self.system_prompt = os.getenv("LATEX_AGENT_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT)
         self.model_var = tk.StringVar(value=self.default_model)
+        self.backend_var = tk.StringVar(value=BACKENDS[0])
         self.status_var = tk.StringVar(value="Ready.")
         self.result_locked = True
         self._search_var = tk.StringVar()
@@ -78,12 +87,23 @@ class LatexAgentApp(_BaseClass):
         self.bind("<Escape>", self._on_escape)
 
     def _validate_api_key_on_startup(self) -> None:
-        if not os.getenv("OPENAI_API_KEY", "").strip():
+        if self.backend_var.get() == "OpenAI" and not os.getenv("OPENAI_API_KEY", "").strip():
             self.status_var.set("Warning: OPENAI_API_KEY not set. Add it to .env and restart.")
             messagebox.showwarning(
                 "API Key Missing",
                 "OPENAI_API_KEY is not set.\nAdd it to your .env file and restart the app.",
             )
+
+    def _on_backend_change(self) -> None:
+        using_openai = self.backend_var.get() == "OpenAI"
+        self._model_combo.configure(state="readonly" if using_openai else "disabled")
+        if not using_openai and not _PIX2TEX_AVAILABLE:
+            messagebox.showwarning(
+                "pix2tex not installed",
+                "pix2tex is not installed.\n\nRun:\n  pip install pix2tex\n\nthen restart the app.",
+            )
+            self.backend_var.set("OpenAI")
+            self._model_combo.configure(state="readonly")
 
     def _build_ui(self) -> None:
         root = ttk.Frame(self, padding=16)
@@ -113,13 +133,21 @@ class LatexAgentApp(_BaseClass):
         self._cancel_btn = ttk.Button(controls, text="Cancel", command=self._request_cancel, state="disabled")
         self._cancel_btn.pack(side="left", padx=(8, 0))
 
-        # Model row
+        # Backend + model row
         model_row = ttk.Frame(root)
         model_row.pack(fill="x", pady=(0, 8))
-        ttk.Label(model_row, text="Model").pack(side="left")
-        ttk.Combobox(model_row, textvariable=self.model_var, values=MODEL_PRESETS, width=26).pack(
-            side="left", padx=(8, 0)
+        ttk.Label(model_row, text="Backend").pack(side="left")
+        for b in BACKENDS:
+            ttk.Radiobutton(
+                model_row, text=b, variable=self.backend_var, value=b,
+                command=self._on_backend_change,
+            ).pack(side="left", padx=(6, 0))
+        ttk.Separator(model_row, orient="vertical").pack(side="left", fill="y", padx=(12, 0))
+        ttk.Label(model_row, text="Model").pack(side="left", padx=(12, 0))
+        self._model_combo = ttk.Combobox(
+            model_row, textvariable=self.model_var, values=MODEL_PRESETS, width=26
         )
+        self._model_combo.pack(side="left", padx=(8, 0))
         ttk.Label(
             model_row,
             text=(
@@ -277,7 +305,8 @@ class LatexAgentApp(_BaseClass):
         self._cancel_requested = False
         self._cancel_btn.configure(state="normal")
         self._progress.start(12)
-        self.status_var.set("Analyzing image and generating LaTeX...")
+        backend = self.backend_var.get()
+        self.status_var.set(f"Analyzing image with {backend}...")
         self._set_result_text("")
 
         image_snapshot = self.current_image  # capture reference before thread starts
@@ -292,39 +321,13 @@ class LatexAgentApp(_BaseClass):
 
     def _generate_latex_worker(self, source: str, image: Image.Image) -> None:
         try:
-            client = self._get_client()
-            data_url = self._image_to_data_url(image)
-            response = client.responses.create(
-                model=self.model_var.get().strip() or self.default_model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": [{"type": "input_text", "text": self.system_prompt}],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": (
-                                    "Extract the mathematical expression from this image "
-                                    "and return only the LaTeX."
-                                ),
-                            },
-                            {
-                                "type": "input_image",
-                                "image_url": data_url,
-                                "detail": "high",
-                            },
-                        ],
-                    },
-                ],
-                timeout=API_TIMEOUT,
-            )
+            if self.backend_var.get() == "pix2tex (local)":
+                latex = self._run_pix2tex(image)
+            else:
+                latex = self._run_openai(image)
             if self._cancel_requested:
                 self.after(0, self._handle_cancel)
                 return
-            latex = response.output_text.strip()
             if not latex:
                 raise RuntimeError("The model returned an empty result.")
             self.after(0, lambda: self._handle_result(latex, source))
@@ -333,6 +336,48 @@ class LatexAgentApp(_BaseClass):
                 self.after(0, self._handle_cancel)
             else:
                 self.after(0, lambda: self._handle_error(str(exc)))
+
+    def _run_openai(self, image: Image.Image) -> str:
+        client = self._get_client()
+        data_url = self._image_to_data_url(image)
+        response = client.responses.create(
+            model=self.model_var.get().strip() or self.default_model,
+            input=[
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": self.system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "Extract the mathematical expression from this image "
+                                "and return only the LaTeX."
+                            ),
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": data_url,
+                            "detail": "high",
+                        },
+                    ],
+                },
+            ],
+            timeout=API_TIMEOUT,
+        )
+        return response.output_text.strip()
+
+    def _run_pix2tex(self, image: Image.Image) -> str:
+        if not _PIX2TEX_AVAILABLE:
+            raise RuntimeError("pix2tex is not installed. Run: pip install pix2tex")
+        if self._pix2tex_model is None:
+            self.after(0, lambda: self.status_var.set(
+                "Loading pix2tex model (first run downloads weights, please wait)..."
+            ))
+            self._pix2tex_model = _Pix2TexOCR()
+        return self._pix2tex_model(image)
 
     def _handle_result(self, latex: str, source: str) -> None:
         self._end_busy()

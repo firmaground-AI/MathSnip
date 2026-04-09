@@ -18,11 +18,19 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and set your API key:
+Edit `.env` and set your API key (only required for the OpenAI backend):
 
 ```env
 OPENAI_API_KEY=your_api_key_here
 ```
+
+### Local inference with pix2tex (no API key needed)
+
+```powershell
+pip install pix2tex
+```
+
+Select **pix2tex (local)** in the Backend selector. The model weights are downloaded automatically on first use. Works offline after that.
 
 ## Run
 
@@ -59,4 +67,5 @@ The **History** panel shows the last 25 results. Use the search box to filter by
 - Results are returned without surrounding `$...$` for easier pasting into Word.
 - Complex layouts (matrices, aligned systems, piecewise) are prompted to use matching LaTeX environments.
 - Drag-and-drop requires `tkinterdnd2` (included in `requirements.txt`). The app works without it if the package is unavailable.
+- The pix2tex backend runs entirely offline after the first run. It is best suited for single-line equations; complex multi-line layouts may be less accurate than the OpenAI backend.
 - History is stored locally in `history.json` (excluded from version control).

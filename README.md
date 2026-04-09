@@ -1,6 +1,6 @@
 # MathSnip
 
-A Windows desktop app that captures equation screenshots and converts them to LaTeX using an OpenAI vision model. The result is automatically copied to the clipboard, ready to paste into Word, Overleaf, or any LaTeX editor.
+An app that captures equation screenshots and converts them to LaTeX using an OpenAI vision model. The result is automatically copied to the clipboard, ready to paste into Word, Overleaf, or any LaTeX editor.
 
 ## Setup
 
